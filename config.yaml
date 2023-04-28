@@ -9,13 +9,13 @@ model:
   model_name: seresnet50
   learning_rate: 0.00001
   weight_decay: 0.00001
-  sinkhorn_iter: 15
+  sinkhorn_iter: 25
   sinkhorn_temp: 1.5
   img_size: *img_shape
   block_size: 128
-  feature_size: 1024
-  transformers_layers: 6
-  group_conv: 8
+  feature_size: 256
+  transformers_layers: 4
+  group_conv: 1
   train_block_size: [128]
 
 ^trainer:

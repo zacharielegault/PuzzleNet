@@ -54,33 +54,31 @@ class PuzzleNet(LightningModule):
         self.weight_decay = weight_decay
         self.img_size = img_size
         self.block_size = block_size
-        self.features = timm.create_model(model_name, pretrained=True, features_only=True)
         self.feature_size = feature_size
         self.group_conv = group_conv
-        f_infos = self.features.feature_info.channels()
-
-        f_size = f_infos[-1]
         self.n_transformers_layers = transformers_layers
-
-        self.proj_conv = nn.Sequential(nn.Conv2d(f_size, self.feature_size, 1), nn.ReLU())
-
-        self.keys_queries_proj = nn.ModuleList(
-            [nn.Conv2d(self.feature_size, feature_size, 1, groups=group_conv),
-             nn.Conv2d(self.feature_size, feature_size, 1, groups=group_conv)])
-
-        layers = [nn.Identity()]
-        for i in range(self.n_transformers_layers):
-            layers.append(nn.TransformerEncoderLayer(self.feature_size, 8, dim_feedforward=f_size,
-                                                     activation='gelu',
-                                                     batch_first=True))
-        self.fusion = nn.Sequential(*layers)
-
-        self.final_conv = nn.Conv2d(self.group_conv, 1, 1)
-
-        self.loss = nn.BCELoss()
         self.sinkhorn_iter = sinkhorn_iter
         self.sinkhorn_temp = sinkhorn_temp
         self.train_block_sizes = train_block_size
+
+        self.encoder = timm.create_model(model_name, pretrained=True, features_only=True)
+        f_infos = self.encoder.feature_info.channels()
+        f_size = f_infos[-1]
+        self.proj_conv = nn.Sequential(nn.Conv2d(f_size, self.feature_size, 1), nn.ReLU())
+
+        self.keys_queries_proj = nn.ModuleList(
+            [nn.Conv2d(self.feature_size, self.feature_size, 1, groups=group_conv),
+             nn.Conv2d(self.feature_size, self.feature_size, 1, groups=group_conv)])
+
+        layers = [nn.Identity()]
+        for i in range(self.n_transformers_layers):
+            layers.append(nn.TransformerEncoderLayer(self.feature_size, 8, dim_feedforward=self.feature_size,
+                                                     activation='gelu',
+                                                     batch_first=True))
+        self.fusion_module = nn.Sequential(*layers)
+        self.final_conv = nn.Conv2d(self.group_conv, 1, 1)
+
+        self.loss = nn.BCELoss()
 
         self.save_hyperparameters()
 
@@ -100,25 +98,25 @@ class PuzzleNet(LightningModule):
         return self.L ** 2
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        '''
+        """
 
         :param x: torch.Tensor, size BXCxHxW
         :return: Permutation: torch.Tensor
-        '''
+        """
 
-        # CNN part ###
+        # CNN part
         b = x.shape[0]
-        y = self.features(x)[-1]
+        y = self.encoder(x)[-1]  # Get last feature map
         y = F.interpolate(y, size=(self.L, self.L))
         y = self.proj_conv(y)
 
-        # Transformer part ###
+        # Transformer part
         y = y.view(b, self.feature_size, self.n_pieces)
         y = y.permute(0, 2, 1)
-        A = self.fusion(y)
+        A = self.fusion_module(y)
         A = A.permute((0, 2, 1)).view(b, self.feature_size, self.L, self.L)
 
-        # Cross Attention part ###
+        # Cross Attention part
         queries = self.keys_queries_proj[0](A)
         queries = queries.view(b, self.group_conv, self.feature_size // self.group_conv, self.n_pieces)
         queries = queries.permute(0, 1, 3, 2)
@@ -129,7 +127,7 @@ class PuzzleNet(LightningModule):
 
         cross_att = torch.matmul(queries, keys) * scale
 
-        # Projection to permutation ###
+        # Projection to permutation
         A = self.final_conv(cross_att)
         A, _ = my_gumbel_sinkhorn(A, noise_factor=0.0, temp=self.sinkhorn_temp, n_iters=self.sinkhorn_iter)
         return A
@@ -162,7 +160,7 @@ class PuzzleNet(LightningModule):
 
     def get_eye_gt(self, b):
         """
-        Return the identity matrix (corresponding to the unshuffle image permutation)
+        Return the identity matrix, which corresponds to the permutation matrix on unshuffled image
         :param b: batch-size
         :return:
         """
@@ -242,8 +240,8 @@ class PuzzleNet(LightningModule):
         return unblock
 
     def parameters(self, recurse: bool = True):
-        return list(self.features.parameters()) + list(self.keys_queries_proj.parameters()) + list(
-            self.fusion.parameters())
+        return list(self.encoder.parameters()) + list(self.keys_queries_proj.parameters()) + list(
+            self.fusion_module.parameters())
 
     def configure_optimizers(self):
         params = self.parameters()
