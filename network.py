@@ -23,7 +23,7 @@ class PuzzleNet(LightningModule):
                  sinkhorn_temp=0.5,
                  feature_size=256,
                  transformers_layers=2,
-                 group_conv=256,
+                 group_conv=32,
                  train_block_size=(512, 256, 128)
                  ):
         """
@@ -76,7 +76,6 @@ class PuzzleNet(LightningModule):
                                                      activation='gelu',
                                                      batch_first=True))
         self.fusion_module = nn.Sequential(*layers)
-        self.final_conv = nn.Conv2d(self.group_conv, 1, 1)
 
         self.loss = nn.BCELoss()
 
@@ -119,16 +118,18 @@ class PuzzleNet(LightningModule):
         # Cross Attention part
         queries = self.keys_queries_proj[0](A)
         queries = queries.view(b, self.group_conv, self.feature_size // self.group_conv, self.n_pieces)
-        queries = queries.permute(0, 1, 3, 2)
+        queries = queries.permute(0, 1, 3, 2).squeeze(1)
 
         keys = self.keys_queries_proj[1](A)
-        keys = keys.view(b, self.group_conv, self.feature_size // self.group_conv, self.n_pieces)
-        scale = self.feature_size ** -0.5
+        keys = keys.view(b, self.group_conv, self.feature_size // self.group_conv, self.n_pieces).squeeze(1)
+        scale = (self.feature_size // self.group_conv) ** -0.5
 
         cross_att = torch.matmul(queries, keys) * scale
 
         # Projection to permutation
-        A = self.final_conv(cross_att)
+        if self.group_conv != 1:
+            A = torch.mean(cross_att, 1)
+
         A, _ = my_gumbel_sinkhorn(A, noise_factor=0.0, temp=self.sinkhorn_temp, n_iters=self.sinkhorn_iter)
         return A
 
