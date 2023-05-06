@@ -1,0 +1,28 @@
+[project]
+name = "puzzlenet"
+version = "0.0.1"
+description = "Solving Puzzle with CNNs"
+
+[build-system]
+requires = ["setuptools>=64.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 120
+
+[tool.ruff]
+line-length = 120
+select = ["E", "F", "I", "A", "B", "PL", "RUF"]
+ignore = [
+    "PLR0913",  # Allow more arguments in function signatures
+    "E731",  # Allow lambda expression
+]
+fixable = ["I"]
+exclude = ["NNTools"]
+
+[tool.ruff.isort]
+known-first-party = ["puzzlenet"]
+section-order = ["future", "standard-library", "third-party", "nntools", "first-party", "local-folder"]
+
+[tool.ruff.isort.sections]
+"nntools" = ["nntools"]
