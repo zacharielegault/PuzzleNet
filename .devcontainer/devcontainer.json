@@ -1,0 +1,28 @@
+{
+    "name": "PuzzleNet dev container",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "runArgs": [
+        "--gpus",
+        "all",
+        "--shm-size=4g"
+    ],
+    "postCreateCommand": "pip install -e . && pip install ./NNTools",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "GitHub.copilot",
+                "eamodio.gitlens",
+                "redhat.vscode-yaml",
+                "njpwerner.autodocstring",
+                "ms-toolsai.jupyter"
+            ]
+        }
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {}
+    }
+}
